@@ -1,0 +1,55 @@
+Função Heurística = T(distância_reta) + T(distância_real)
+Estruturas de dados utilizadas: dicionario do python e priorityQueue (BinHeap)
+######################Classes#########################################
+
+classe Mapa:
+ '''
+ vai encapsular os tres dicionarios
+ e os metodos 
+ '''
+
+	distancia_real = {
+		'E1' : {'E2': ('azul', 10), 'E3' : ('amarela', 18.5), ...}
+		}
+
+
+	distancia_euristica = {
+		'E1' : {'E2' : 10, 'E3' : (19.5), ...},
+		...
+	}
+
+	linhas_possiveis = {
+		'E1' : ['azul'],
+		...
+	}
+	
+classe PriorityQueue:
+'''
+Vai ordenar parcialmente os nós
+garantindo que o primeiro elemento seja o com menor valor da função heurística
+'''
+
+push, extractMin, pop, heapify
+
+###############################Metodos##############################################
+calcula_custo_real(est_atual, custo_atual, linha_atual, est_vizinha):
+	ligacao_real = dist_real[est_atual][est_vizinha] # (dist, tipo) 
+	tempo_real = ligacao_real[0]/vel
+	se (linha_atual != ligacao_real[1]):
+		tempo_real += 4
+		linha_atual = ligacao_real[1]
+	return tempo_real + custo_atual, linha_atual
+
+
+calcular_melhor_caminho(estacao_inicial, linha_inicial, estacao_final):
+	fronteira = new PriorityQueue() # heap vai ordenar automaticamente
+	caminho = []
+	fronteira.push((0, estacao_inicial, linha_inicial))
+	enquanto fronteira.notNull:
+		c_atual, e_atual, l_atual = fronteira.extractMin() # garante melhor estado
+		caminho.append((e_atual, l_atual))
+		if(e_atual == estacao_final):
+			return caminho
+		para e_vizinha in distancia_real[e_atual]:
+			custo_real, nova_linha = calcula_custo_real(e_atual, linha_atual ,e_vizinha)
+			fronteira.push((custo_real, e_vizinha, nova_linha))
