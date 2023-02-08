@@ -49,8 +49,9 @@ def make_stations_dic(dist_estacoes):
 def distancia_para_tempo_em_minutos(dist):
     return dist*2
 # %%
+INF = int(2e9)
 class Mapa:
-    def __init__(self, est_ini, linha_ini, est_fin):
+    def __init__(self, est_ini, linha_ini, est_fin, debug=False):
         self.dist_real = make_stations_dic(dist_estacoes)
         self.dist_heuristica = {
             'E1' :{
@@ -290,22 +291,23 @@ class Mapa:
         }
 
         self.linhas_possiveis = {
-            'E1':{'B'},  
-            'E2': {'B','Y'},
-            'E3': {'B','R'},
-            'E4': {'B','G'},
-            'E5': {'B','Y'},
-            'E6': {'B'},
-            'E7': {'Y'},
-            'E8': {'B','Y'},
-            'E9': {'R','Y'},
-            'E10': {'Y'},
-            'E11': {'R'},
-            'E12': {'G'},
-            'E13': {'G','R'},
-            'E14': {'G'}
+            'E1':['B'],  
+            'E2': ['B','Y'],
+            'E3': ['B','R'],
+            'E4': ['B','G'],
+            'E5': ['B','Y']        ,
+            'E6': ['B'],
+            'E7': ['Y'],
+            'E8': ['G','Y'],
+            'E9': ['R','Y'],
+            'E10': ['Y'],
+            'E11': ['R'],
+            'E12': ['G'],
+            'E13': ['G','R'],
+            'E14': ['G']
         }
-        INF = int(2e9)
+
+        
         self.grid = {station: {"nome": station, "f": INF, "g": INF, "h": INF, "est_pai": None, "visitado": False} for station in dist_retas.index}
 
         self.linhas_percorridas = []
@@ -316,20 +318,10 @@ class Mapa:
         self.est_inicial = est_ini
         self.linha_ini = linha_ini
         self.est_final = est_fin
+        self.debug = debug
 
-    def calcula_custo_real(self, est_atual, custo_atual, linha_atual, est_vizinha, est_final):
-        dist_para_vizinha, linha = self.dist_real[est_atual][est_vizinha]
-        # print(f"{est_atual} -> {est_vizinha}: {dist_para_vizinha=}")
-        tempo_para_vizinha = distancia_para_tempo_em_minutos(dist_para_vizinha)
-    
-        tempo_troca_de_linha = 0
-        if linha != linha_atual:
-            tempo_troca_de_linha += 4
-        linha_atual = linha
-
-        custo_real = tempo_para_vizinha + custo_atual + tempo_troca_de_linha
-        # print(f"{est_atual} -> {est_vizinha}: {custo_real}")
-        return custo_real, linha
+        if self.linha_ini not in self.linhas_possiveis[self.est_inicial]:
+            raise TypeError(f"A linha {self.get_linha_atual_str(self.linha_ini)} não passa pela estação {self.est_inicial}")
 
     def gera_fronteira(self, est):
         est_vizinhas = list(self.dist_real[est].keys())
@@ -347,14 +339,16 @@ class Mapa:
 
 
     def atualiza_grid(self, est_atual, fronteira, linha_atual):
+        est_pai = self.grid[est_atual]
+        g_pai = est_pai["g"] if est_pai and est_pai["g"] < INF else 0
+
+
         for est_fronteira in fronteira:
             est_no_grid = self.grid[est_fronteira]
             dist_para_est, linha_para_est = self.dist_real[est_atual][est_fronteira]
             tempo_para_est = distancia_para_tempo_em_minutos(dist_para_est)
-
             baldeacao = 4 if linha_atual != linha_para_est else 0
-            g_pai = est_no_grid["est_pai"]["g"] if est_no_grid.get("est_pai") else 0
-            # print(g_pai, dist_para_est)
+            
             g = g_pai + tempo_para_est + baldeacao
 
             h = self.dist_heuristica[est_fronteira][self.est_final]
@@ -389,28 +383,54 @@ class Mapa:
             est_atual = est_atual['est_pai']
         caminho.reverse()
         return caminho
+    
+    def get_linha_atual_str(self, linha):
+        linha_dict = {
+            'G': 'verde',
+            'Y': 'amarela',
+            'B': 'azul',
+            'R': 'vermelha'
+        }
+        return linha_dict.get(linha, "N/A")
 
     def melhor_caminho(self):
         est_atual = self.est_inicial
         linha_atual = self.linha_ini
         while est_atual != self.est_final:
             fronteira = self.gera_fronteira(est_atual)
-            print(f"Estação atual: {est_atual}")
-            print(f"Fronteira de {est_atual}:")
-            
-            linha_atual = self.atualiza_grid(est_atual, fronteira, linha_atual)
-            for est in fronteira:
-                est_no_grid = self.grid[est]
-                print(f"\t{est}: G = {est_no_grid['g']}, F = {est_no_grid['f']}, H = {est_no_grid['h']}")
-            print("\n")
+            self.atualiza_grid(est_atual, fronteira, linha_atual)
+
+            if self.debug:
+                print(f"Estação atual: {est_atual}")
+                print(f"Linha atual: {self.get_linha_atual_str(linha_atual)}")
+                print(f"Fronteira de {est_atual}:")
+                
+                for est in fronteira:
+                    est_no_grid = self.grid[est]
+                    print(f"\t{est}: G = {est_no_grid['g']}, H = {est_no_grid['h']}, F = {est_no_grid['f']}")
+                print("\n")
+
             self.grid[est_atual]['visitado'] = True
-            est_atual = self.seleciona_menor_f_do_grid()
+            prox_est = self.seleciona_menor_f_do_grid()
+
+            if self.grid[prox_est]['est_pai']:
+                est_conectada = self.grid[prox_est]['est_pai']['nome']
+            else:
+                est_conectada = est_atual
+            linha_atual = self.dist_real[est_conectada][prox_est][1]
+            est_atual = prox_est
         
         caminho = self.recupera_caminho()
-        return caminho
+        # formatação do output
+        caminho.insert(0, self.est_inicial)
+        caminho_str = '\\' + '='*80 + '|\n'
+        caminho_str += "o caminho mais rápido é: " + ' -> '.join(caminho) + '\n'
+        tempo_final = self.grid[self.est_final]['g']
+        caminho_str += f"o tempo total do trajeto é de {round(tempo_final,2)} minutos\n"
+        return caminho_str
 
         
-mapa = Mapa('E3', 'G', "E14")
+mapa = Mapa('E11', 'R', "E14", debug=True)
 
 print(mapa.melhor_caminho())
 
