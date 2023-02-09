@@ -6,19 +6,6 @@ import numpy as np
 dist_retas = pd.read_excel('./retas.xlsx', index_col=0)
 dist_estacoes = pd.read_excel('https://github.com/tnpb-1st/if684-projeto-busca-estrela/blob/master/station-distances.xlsx?raw=true',index_col=0)
 
-
-
-# %%
-df_direto = dist_retas.copy(deep=True)
-for r in df_direto.index:
-  for c in df_direto.columns:
-    if df_direto.loc[r,c]:
-      df_direto.loc[r,c] = df_direto.loc[r,c] * 2
-      df_direto.loc[c,r] = df_direto.loc[r,c]
-df_direto.to_csv('retas.csv')
-
-# %%
-# dist_retas.index
 def make_stations_dic(dist_estacoes):
   # Dado que B = Linha Blue, Y = Linha Yellow, G = Linha Green, R = Linha Red;
   dici = {}
@@ -308,7 +295,10 @@ class Mapa:
         }
 
         
-        self.grid = {station: {"nome": station, "f": INF, "g": INF, "h": INF, "est_pai": None, "visitado": False} for station in dist_retas.index}
+        self.grid = {}
+        for station in dist_retas.index:
+            for linha in self.linhas_possiveis[station]:
+                self.grid[(station, linha)] = {"nome": station, "f": INF, "g": INF, "h": INF, "est_pai": None, "visitado": False}
 
         self.linhas_percorridas = []
         self.est_to_idx = {}
@@ -323,14 +313,18 @@ class Mapa:
         if self.linha_ini not in self.linhas_possiveis[self.est_inicial]:
             raise TypeError(f"A linha {self.get_linha_atual_str(self.linha_ini)} não passa pela estação {self.est_inicial}")
 
-    def gera_fronteira(self, est):
-        est_vizinhas = list(self.dist_real[est].keys())
-        fronteira = est_vizinhas[:]
-        for est_vizinha in est_vizinhas:
-            est_visitada = self.grid[est_vizinha]['visitado']
-            est_pai = self.grid[est_vizinha]['est_pai']
-            if est_visitada or est_pai == est:
-                fronteira.remove(est_vizinha)
+    def gera_fronteira(self, est, linha_atual):
+        est_vizinhas = self.dist_real[est]
+        est_on_grid = self.grid[(est, linha_atual)]
+
+        fronteira = []
+        for est_vizinha, info in est_vizinhas.items():
+            linha_vizinha = info[1]
+            est_visitada = self.grid[(est_vizinha, linha_vizinha)]['visitado']
+            est_pai = self.grid[(est_vizinha, linha_vizinha)]['est_pai']
+            if est_visitada or est_pai == est_on_grid:
+                continue
+            fronteira.append((est_vizinha, linha_vizinha))
         return fronteira
 
     @staticmethod
@@ -339,19 +333,19 @@ class Mapa:
 
 
     def atualiza_grid(self, est_atual, fronteira, linha_atual):
-        est_pai = self.grid[est_atual]
+        est_pai = self.grid[(est_atual, linha_atual)]
         g_pai = est_pai["g"] if est_pai and est_pai["g"] < INF else 0
 
 
-        for est_fronteira in fronteira:
-            est_no_grid = self.grid[est_fronteira]
-            dist_para_est, linha_para_est = self.dist_real[est_atual][est_fronteira]
+        for est_fronteira, linha_para_est in fronteira:
+            est_no_grid = self.grid[(est_fronteira, linha_para_est)]
+            dist_para_est = self.dist_real[est_atual][est_fronteira][0]
             tempo_para_est = distancia_para_tempo_em_minutos(dist_para_est)
             baldeacao = 4 if linha_atual != linha_para_est else 0
             
             g = g_pai + tempo_para_est + baldeacao
 
-            h = self.dist_heuristica[est_fronteira][self.est_final]
+            h = distancia_para_tempo_em_minutos(self.dist_heuristica[est_fronteira][self.est_final])
 
             possivel_f = g + h
             f_atual = self.calcula_f(est_no_grid)
@@ -359,24 +353,23 @@ class Mapa:
                 est_no_grid['g'] = g
                 est_no_grid['h'] = h
                 est_no_grid['f'] = possivel_f
-                est_no_grid['est_pai'] = self.grid[est_atual]
+                est_no_grid['est_pai'] = self.grid[(est_atual, linha_atual)]
 
 
     def seleciona_menor_f_do_grid(self):
-        menor_est = 'E1'
-        menor_f = self.grid[menor_est]['f']
+        menor_est = (None, None)
+        menor_f = INF
 
-        for est, values in self.grid.items():
+        for key, values in self.grid.items():
+            est, linha = key
+
             if values['f'] < menor_f and not values['visitado']:
                 menor_f = values['f']
-                menor_est = est
+                menor_est = (est, linha)
         return menor_est
 
-    def recupera_caminho(self, est_final=None):
-        if est_final is None:
-            est_final = self.est_final
-
-        est_atual = self.grid[est_final]
+    def recupera_caminho(self, est_final, linha_final):
+        est_atual = self.grid[(est_final, linha_final)]
         caminho = []
         while est_atual.get('est_pai'):
             caminho.append(est_atual['nome'])
@@ -397,7 +390,7 @@ class Mapa:
         est_atual = self.est_inicial
         linha_atual = self.linha_ini
         while est_atual != self.est_final:
-            fronteira = self.gera_fronteira(est_atual)
+            fronteira = self.gera_fronteira(est_atual, linha_atual)
             self.atualiza_grid(est_atual, fronteira, linha_atual)
 
             if self.debug:
@@ -410,29 +403,31 @@ class Mapa:
                     print(f"\t{est}: G = {est_no_grid['g']}, H = {est_no_grid['h']}, F = {est_no_grid['f']}")
                 print("\n")
 
-            self.grid[est_atual]['visitado'] = True
+            self.grid[(est_atual, linha_atual)]['visitado'] = True
             prox_est = self.seleciona_menor_f_do_grid()
 
             if self.grid[prox_est]['est_pai']:
                 est_conectada = self.grid[prox_est]['est_pai']['nome']
             else:
                 est_conectada = est_atual
-            linha_atual = self.dist_real[est_conectada][prox_est][1]
-            est_atual = prox_est
+            linha_atual = self.dist_real[est_conectada][prox_est[0]][1]
+            est_atual = prox_est[0]
         
-        caminho = self.recupera_caminho()
+        caminho = self.recupera_caminho(self.est_final, linha_atual)
         # formatação do output
         caminho.insert(0, self.est_inicial)
         caminho_str = '\\' + '='*80 + '|\n'
         caminho_str += "o caminho mais rápido é: " + ' -> '.join(caminho) + '\n'
-        tempo_final = self.grid[self.est_final]['g']
+        tempo_final = self.grid[(self.est_final, linha_atual)]['g']
         caminho_str += f"o tempo total do trajeto é de {round(tempo_final,2)} minutos\n"
         return caminho_str
 
         
-mapa = Mapa('E11', 'R', "E14", debug=True)
+mapa1 = Mapa('E1', 'B', "E14", debug=False)
+# print(mapa1.melhor_caminho())
 
-print(mapa.melhor_caminho())
+mapa2 = Mapa('E12', 'G', 'E5', debug=True)
+print(mapa2.melhor_caminho())
 
 
 # %%
